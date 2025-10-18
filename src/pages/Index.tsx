@@ -1,12 +1,27 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useEffect } from "react";
+import { Hero } from "@/components/landing/Hero";
+import { Features } from "@/components/landing/Features";
+import { IntegrationShowcase } from "@/components/landing/IntegrationShowcase";
+import { WhiteLabelDemo } from "@/components/landing/WhiteLabelDemo";
+import { CTASection } from "@/components/landing/CTASection";
+import { defaultConfig, applyWhiteLabelTheme } from "@/config/whitelabel";
 
 const Index = () => {
+  useEffect(() => {
+    // Apply white-label theme on mount
+    applyWhiteLabelTheme(defaultConfig);
+  }, []);
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
-      </div>
+    <div className="min-h-screen">
+      <Hero 
+        institutionName={defaultConfig.institutionName}
+        tagline={defaultConfig.tagline}
+      />
+      <Features />
+      <IntegrationShowcase />
+      <WhiteLabelDemo />
+      <CTASection />
     </div>
   );
 };
