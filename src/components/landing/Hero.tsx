@@ -22,7 +22,7 @@ export const Hero = ({ institutionName, tagline }: HeroProps) => {
             </div>
           </div>
           
-          <h1 className="text-5xl md:text-7xl font-bold mb-6 bg-clip-text text-transparent gradient-primary">
+          <h1 className="text-5xl md:text-7xl font-bold mb-6 bg-clip-text text-transparent bg-gradient-to-br from-primary via-primary-glow to-accent">
             The All-in-One Platform for Islamic Educational Institutions
           </h1>
           
