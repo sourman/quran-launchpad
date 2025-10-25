@@ -28,7 +28,7 @@ const Auth = () => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) {
-        navigate("/");
+        navigate("/dashboard");
       }
     });
 
@@ -36,7 +36,7 @@ const Auth = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       if (session) {
-        navigate("/");
+        navigate("/dashboard");
       }
     });
 

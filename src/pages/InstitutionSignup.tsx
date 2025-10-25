@@ -107,7 +107,7 @@ const InstitutionSignup = () => {
         description: "Check your email to verify your account.",
       });
 
-      navigate("/");
+      navigate("/dashboard");
     } catch (error: any) {
       console.error("Signup error:", error);
       toast({
