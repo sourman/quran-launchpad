@@ -24,20 +24,46 @@ const Auth = () => {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const routeAfterAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      console.log("[Auth] getSession on mount:", !!session);
       setSession(session);
-      if (session) {
-        navigate("/dashboard");
-      }
-    });
+      if (!session) return;
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      setSession(session);
-      if (session) {
-        navigate("/dashboard");
+      // Determine if onboarding is needed
+      const userId = session.user.id;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("institution_id")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (!profile?.institution_id) {
+        navigate("/onboarding");
+        return;
       }
+      navigate("/dashboard");
+    };
+
+    routeAfterAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      console.log("[Auth] onAuthStateChange:", _event, !!session);
+      setSession(session);
+      if (!session) return;
+
+      const userId = session.user.id;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("institution_id")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (!profile?.institution_id) {
+        navigate("/onboarding");
+        return;
+      }
+      navigate("/dashboard");
     });
 
     return () => subscription.unsubscribe();
@@ -46,6 +72,7 @@ const Auth = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
+    console.log("[Auth] Submitting login with:", { email: formData.email });
 
     // Validate form
     const validation = loginSchema.safeParse(formData);
@@ -63,22 +90,35 @@ const Auth = () => {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data: signInData, error } = await supabase.auth.signInWithPassword({
         email: formData.email,
         password: formData.password,
       });
 
+      console.log("[Auth] signInWithPassword:", { hasSession: !!signInData?.session, error: error?.message });
+
       if (error) {
-        if (error.message.includes("Invalid login credentials")) {
+        if (error.message?.toLowerCase().includes("invalid login credentials")) {
           throw new Error("Invalid email or password");
+        }
+        if (error.message?.toLowerCase().includes("email not confirmed") || error.message?.toLowerCase().includes("confirm")) {
+          throw new Error("Please confirm your email before signing in.");
         }
         throw error;
       }
 
+      // Double-check session
+      const { data: { session: afterSession } } = await supabase.auth.getSession();
+      console.log("[Auth] getSession after login:", !!afterSession);
+
       toast({
         title: "Welcome back!",
-        description: "You've successfully signed in.",
+        description: afterSession ? "You've successfully signed in." : "Signed in. Finalizing session...",
       });
+
+      if (afterSession) {
+        navigate("/dashboard");
+      }
     } catch (error: any) {
       console.error("Login error:", error);
       toast({

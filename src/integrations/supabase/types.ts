@@ -14,6 +14,50 @@ export type Database = {
   }
   public: {
     Tables: {
+      classes: {
+        Row: {
+          created_at: string
+          id: string
+          institution_id: string
+          monthly_price: number
+          name: string
+          stripe_payment_link: string | null
+          stripe_price_id: string | null
+          stripe_product_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          institution_id: string
+          monthly_price: number
+          name: string
+          stripe_payment_link?: string | null
+          stripe_price_id?: string | null
+          stripe_product_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          institution_id?: string
+          monthly_price?: number
+          name?: string
+          stripe_payment_link?: string | null
+          stripe_price_id?: string | null
+          stripe_product_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "classes_institution_id_fkey"
+            columns: ["institution_id"]
+            isOneToOne: false
+            referencedRelation: "institutions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       institutions: {
         Row: {
           accent_color: string | null
@@ -81,6 +125,56 @@ export type Database = {
             columns: ["institution_id"]
             isOneToOne: false
             referencedRelation: "institutions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      students: {
+        Row: {
+          class_id: string
+          created_at: string
+          email: string
+          id: string
+          name: string
+          phone: string | null
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          subscribed_since: string
+          subscription_status: string | null
+          updated_at: string
+        }
+        Insert: {
+          class_id: string
+          created_at?: string
+          email: string
+          id?: string
+          name: string
+          phone?: string | null
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          subscribed_since?: string
+          subscription_status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          class_id?: string
+          created_at?: string
+          email?: string
+          id?: string
+          name?: string
+          phone?: string | null
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          subscribed_since?: string
+          subscription_status?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "students_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
             referencedColumns: ["id"]
           },
         ]

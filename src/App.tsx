@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import InstitutionSignup from "./pages/InstitutionSignup";
+import Onboarding from "./pages/Onboarding";
 import DemoInstitution from "./pages/DemoInstitution";
 import Dashboard from "./pages/Dashboard";
 import ClassDetail from "./pages/ClassDetail";
@@ -19,11 +20,17 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
+      <BrowserRouter
+        future={{
+          v7_startTransition: true,
+          v7_relativeSplatPath: true,
+        }}
+      >
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/institution-signup" element={<InstitutionSignup />} />
+          <Route path="/onboarding" element={<Onboarding />} />
           <Route path="/demo" element={<DemoInstitution />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/dashboard/class/:classId" element={<ClassDetail />} />

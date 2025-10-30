@@ -10,11 +10,9 @@ import { z } from "zod";
 import { Building2, Loader2 } from "lucide-react";
 
 const signupSchema = z.object({
-  institutionName: z.string().trim().min(2, "Institution name must be at least 2 characters").max(100),
   contactEmail: z.string().trim().email("Invalid email address").max(255),
   password: z.string().min(8, "Password must be at least 8 characters"),
   confirmPassword: z.string(),
-  fullName: z.string().trim().min(2, "Full name is required").max(100),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
@@ -22,11 +20,9 @@ const signupSchema = z.object({
 
 const InstitutionSignup = () => {
   const [formData, setFormData] = useState({
-    institutionName: "",
     contactEmail: "",
     password: "",
     confirmPassword: "",
-    fullName: "",
   });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -37,7 +33,6 @@ const InstitutionSignup = () => {
     e.preventDefault();
     setErrors({});
 
-    // Validate form
     const validation = signupSchema.safeParse(formData);
     if (!validation.success) {
       const newErrors: Record<string, string> = {};
@@ -53,67 +48,28 @@ const InstitutionSignup = () => {
     setLoading(true);
 
     try {
-      // 1. Sign up the user
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+      const { error } = await supabase.auth.signUp({
         email: formData.contactEmail,
         password: formData.password,
         options: {
-          emailRedirectTo: `${window.location.origin}/`,
-          data: {
-            full_name: formData.fullName,
-          },
+          emailRedirectTo: `${window.location.origin}/onboarding`,
         },
       });
 
-      if (signUpError) throw signUpError;
-      if (!authData.user) throw new Error("Failed to create user");
-
-      // 2. Create institution
-      const { data: institution, error: institutionError } = await supabase
-        .from("institutions")
-        .insert({
-          name: formData.institutionName,
-          contact_email: formData.contactEmail,
-        })
-        .select()
-        .single();
-
-      if (institutionError) throw institutionError;
-
-      // 3. Create profile
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .insert({
-          id: authData.user.id,
-          institution_id: institution.id,
-          full_name: formData.fullName,
-        });
-
-      if (profileError) throw profileError;
-
-      // 4. Assign institution_admin role
-      const { error: roleError } = await supabase
-        .from("user_roles")
-        .insert({
-          user_id: authData.user.id,
-          role: "institution_admin",
-          institution_id: institution.id,
-        });
-
-      if (roleError) throw roleError;
+      if (error) throw error;
 
       toast({
-        title: "Institution created successfully!",
-        description: "Check your email to verify your account.",
+        title: "Confirm your email",
+        description: "We sent you a confirmation link. Please verify to continue.",
       });
 
-      navigate("/dashboard");
+      navigate("/auth");
     } catch (error: any) {
       console.error("Signup error:", error);
       toast({
         variant: "destructive",
         title: "Signup failed",
-        description: error.message || "Failed to create institution. Please try again.",
+        description: error.message || "Failed to sign up. Please try again.",
       });
     } finally {
       setLoading(false);
@@ -126,51 +82,24 @@ const InstitutionSignup = () => {
         <CardHeader className="space-y-1">
           <div className="flex items-center gap-2 mb-2">
             <Building2 className="h-6 w-6 text-primary" />
-            <CardTitle className="text-2xl">Create Your Institution</CardTitle>
+            <CardTitle className="text-2xl">Create Your Account</CardTitle>
           </div>
           <CardDescription>
-            Join our platform and start managing your educational programs
+            Sign up with your email to get started. You'll confirm your email next.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="institutionName">Institution Name</Label>
-              <Input
-                id="institutionName"
-                placeholder="e.g., Al-Azhar University"
-                value={formData.institutionName}
-                onChange={(e) => setFormData({ ...formData, institutionName: e.target.value })}
-                disabled={loading}
-              />
-              {errors.institutionName && (
-                <p className="text-sm text-destructive">{errors.institutionName}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="fullName">Your Full Name</Label>
-              <Input
-                id="fullName"
-                placeholder="e.g., Ahmed Hassan"
-                value={formData.fullName}
-                onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                disabled={loading}
-              />
-              {errors.fullName && (
-                <p className="text-sm text-destructive">{errors.fullName}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="contactEmail">Contact Email</Label>
+              <Label htmlFor="contactEmail">Email</Label>
               <Input
                 id="contactEmail"
                 type="email"
-                placeholder="admin@institution.com"
+                placeholder="you@institution.com"
                 value={formData.contactEmail}
                 onChange={(e) => setFormData({ ...formData, contactEmail: e.target.value })}
                 disabled={loading}
+                autoComplete="email"
               />
               {errors.contactEmail && (
                 <p className="text-sm text-destructive">{errors.contactEmail}</p>
@@ -186,6 +115,7 @@ const InstitutionSignup = () => {
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 disabled={loading}
+                autoComplete="new-password"
               />
               {errors.password && (
                 <p className="text-sm text-destructive">{errors.password}</p>
@@ -201,6 +131,7 @@ const InstitutionSignup = () => {
                 value={formData.confirmPassword}
                 onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
                 disabled={loading}
+                autoComplete="new-password"
               />
               {errors.confirmPassword && (
                 <p className="text-sm text-destructive">{errors.confirmPassword}</p>
@@ -211,10 +142,10 @@ const InstitutionSignup = () => {
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Creating Institution...
+                  Creating account...
                 </>
               ) : (
-                "Create Institution"
+                "Create Account"
               )}
             </Button>
 
