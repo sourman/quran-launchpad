@@ -307,31 +307,28 @@ const Dashboard = () => {
 
       console.log("📊 Class data to insert:", classData);
 
-      // Create class directly in database (simplified approach)
-      console.log("💾 Attempting to insert class into database...");
-      const { data: classResult, error: classError } = await supabase
-        .from("classes")
-        .insert(classData)
-        .select()
-        .single();
+      // Create class via Edge Function to generate Stripe payment link
+      console.log("⚙️ Invoking create-class Edge Function...");
+      const { data: invokeData, error: invokeError } = await supabase.functions.invoke('create-class', {
+        body: {
+          className: formData.name,
+          monthlyPrice: parseFloat(formData.monthlyPrice),
+          institutionId: institution.id,
+        },
+      });
 
-      console.log("📊 Database response:", { classResult, classError });
+      console.log("📡 Edge Function response:", { invokeData, invokeError });
 
-      if (classError) {
-        console.error("❌ Class creation error details:", {
-          message: classError.message,
-          details: classError.details,
-          hint: classError.hint,
-          code: classError.code
-        });
-        throw new Error(classError.message || "Failed to create class");
+      if (invokeError || !invokeData?.success) {
+        console.error("❌ Edge Function error:", invokeError || invokeData);
+        throw new Error((invokeError as any)?.message || invokeData?.error || "Failed to create class");
       }
 
-      console.log("✅ Class created successfully:", classResult);
+      console.log("✅ Class created with payment link:", invokeData?.class);
 
       toast({
         title: "Success!",
-        description: "Class created successfully",
+        description: "Class created and payment link generated",
       });
 
       setDialogOpen(false);
