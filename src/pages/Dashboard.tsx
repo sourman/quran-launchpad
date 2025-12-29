@@ -215,10 +215,100 @@ const Dashboard = () => {
         throw error;
       }
 
-      const classesWithCount = data?.map((cls: any) => ({
-        ...cls,
-        student_count: 0, // Simplified for now
-      })) || [];
+      if (!data || data.length === 0) {
+        setClasses([]);
+        return;
+      }
+
+      // Get all class IDs
+      const classIds = data.map(cls => cls.id);
+      console.log("📋 Class IDs to query:", classIds);
+
+      // Initialize student counts to 0 for all classes
+      const studentCounts: Record<string, number> = {};
+      classIds.forEach(id => {
+        studentCounts[id] = 0;
+      });
+
+      // Try using the database function first (most reliable)
+      console.log("👥 Fetching student counts using database function...");
+      const { data: functionCounts, error: functionError } = await supabase
+        .rpc('get_student_counts_for_classes', { class_ids: classIds });
+      
+      if (!functionError && functionCounts) {
+        // Use function results (even if empty array - that means no students)
+        functionCounts.forEach((row: { class_id: string; student_count: number }) => {
+          if (row.class_id && studentCounts.hasOwnProperty(row.class_id)) {
+            studentCounts[row.class_id] = row.student_count || 0;
+          }
+        });
+        console.log("✅ Student counts from function:", studentCounts);
+        // If function succeeded, skip fallbacks
+      } else if (functionError) {
+        // Only use fallbacks if function actually errored
+        console.warn("⚠️ Function error, trying fallback methods...", functionError);
+        // Fallback: Fetch all students for all classes in a single query
+        const { data: allStudents, error: studentsError } = await supabase
+          .from("students")
+          .select("class_id")
+          .in("class_id", classIds);
+        
+        if (studentsError) {
+          console.error("❌ Error fetching students:", {
+            message: studentsError.message,
+            details: studentsError.details,
+            hint: studentsError.hint,
+            code: studentsError.code
+          });
+          // If the bulk query fails, fall back to individual queries
+          console.log("⚠️ Falling back to individual class queries...");
+          const countPromises = classIds.map(async (classId) => {
+            const { data: studentsData, error: classError } = await supabase
+              .from("students")
+              .select("id")
+              .eq("class_id", classId);
+            
+            if (classError) {
+              console.error(`❌ Error counting students for class ${classId}:`, {
+                message: classError.message,
+                code: classError.code,
+                details: classError.details
+              });
+              return { classId, count: 0 };
+            }
+            
+            const count = studentsData?.length || 0;
+            console.log(`✅ Class ${classId}: ${count} students`);
+            return { classId, count };
+          });
+
+          const countResults = await Promise.all(countPromises);
+          countResults.forEach(({ classId, count }) => {
+            studentCounts[classId] = count;
+          });
+        } else {
+          // Count students per class
+          if (allStudents && allStudents.length > 0) {
+            allStudents.forEach((student: { class_id: string }) => {
+              if (student.class_id && studentCounts.hasOwnProperty(student.class_id)) {
+                studentCounts[student.class_id] = (studentCounts[student.class_id] || 0) + 1;
+              }
+            });
+          }
+          console.log("📊 Student counts from bulk query:", studentCounts);
+        }
+      }
+
+      console.log("📊 Final student counts:", studentCounts);
+
+      // Map classes with their student counts
+      const classesWithCount = data.map((cls: any) => {
+        const count = studentCounts[cls.id] || 0;
+        return {
+          ...cls,
+          student_count: count,
+        };
+      });
 
       console.log("✅ Classes loaded successfully:", classesWithCount);
       setClasses(classesWithCount);
