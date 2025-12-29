@@ -1,13 +1,15 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
+import Stripe from "https://esm.sh/stripe@14?target=denonext";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, stripe-signature",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, Stripe-Signature",
 };
 
-serve(async (req) => {
+// This is needed in order to use the Web Crypto API in Deno.
+const cryptoProvider = Stripe.createSubtleCryptoProvider();
+
+Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -24,7 +26,6 @@ serve(async (req) => {
 
     const stripe = new Stripe(stripeKey, {
       apiVersion: "2023-10-16",
-      httpClient: Stripe.createFetchHttpClient(),
     });
 
     // Initialize Supabase client with service role
@@ -32,24 +33,45 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get the signature from headers
-    const signature = req.headers.get("stripe-signature");
+    // Get the signature from headers (Stripe uses capital S in header name)
+    const signature = req.headers.get("Stripe-Signature");
     if (!signature) {
-      throw new Error("No stripe signature found");
+      console.error("No stripe signature found in headers");
+      return new Response(
+        JSON.stringify({ error: "No stripe signature found" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    // Get raw body
+    // First step is to verify the event. The .text() method must be used as the
+    // verification relies on the raw request body rather than the parsed JSON.
     const body = await req.text();
 
     // Verify webhook signature
     let event: Stripe.Event;
     try {
-      event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
-    } catch (err) {
-      console.error("Webhook signature verification failed:", err.message);
+      event = await stripe.webhooks.constructEventAsync(
+        body,
+        signature,
+        webhookSecret,
+        undefined,
+        cryptoProvider
+      );
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error("Webhook signature verification failed:", errorMessage);
+      console.error("Signature header present:", !!signature);
+      console.error("Webhook secret configured:", !!webhookSecret);
+      console.error("Body length:", body.length);
       return new Response(
-        JSON.stringify({ error: "Webhook signature verification failed" }),
-        { status: 400, headers: corsHeaders }
+        JSON.stringify({ 
+          error: "Webhook signature verification failed",
+          details: errorMessage 
+        }),
+        { 
+          status: 400, 
+          headers: { ...corsHeaders, "Content-Type": "application/json" } 
+        }
       );
     }
 
@@ -60,32 +82,58 @@ serve(async (req) => {
       const session = event.data.object as Stripe.Checkout.Session;
 
       // Get subscription details
-      const subscriptionId = session.subscription as string;
-      const customerId = session.customer as string;
+      const subscriptionId = session.subscription as string | null;
+      const customerId = session.customer as string | null;
       const customerEmail = session.customer_details?.email;
       const customerName = session.customer_details?.name;
       const customerPhone = session.customer_details?.phone;
 
-      // Get payment link metadata
-      const paymentLinkId = session.payment_link as string;
-      if (!paymentLinkId) {
-        console.error("No payment link ID in session");
+      if (!subscriptionId || !customerId) {
+        console.error("Missing subscription or customer ID in session:", {
+          subscriptionId,
+          customerId,
+        });
         return new Response(JSON.stringify({ received: true }), {
           status: 200,
-          headers: corsHeaders,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Get payment link metadata
+      const paymentLinkId = session.payment_link as string | null;
+      if (!paymentLinkId) {
+        console.log("No payment link ID in session, skipping enrollment");
+        return new Response(JSON.stringify({ received: true }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
       // Retrieve payment link to get metadata
-      const paymentLink = await stripe.paymentLinks.retrieve(paymentLinkId);
+      let paymentLink: Stripe.PaymentLink;
+      try {
+        paymentLink = await stripe.paymentLinks.retrieve(paymentLinkId);
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        console.error("Error retrieving payment link:", errorMessage);
+        return new Response(JSON.stringify({ received: true }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      
       const institutionId = paymentLink.metadata?.institution_id;
       const className = paymentLink.metadata?.class_name;
 
       if (!institutionId || !className) {
-        console.error("Missing metadata in payment link");
+        console.error("Missing metadata in payment link:", {
+          institutionId,
+          className,
+          metadata: paymentLink.metadata,
+        });
         return new Response(JSON.stringify({ received: true }), {
           status: 200,
-          headers: corsHeaders,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
@@ -98,10 +146,14 @@ serve(async (req) => {
         .single();
 
       if (classError || !classData) {
-        console.error("Class not found:", classError);
+        console.error("Class not found:", {
+          error: classError,
+          institutionId,
+          className,
+        });
         return new Response(JSON.stringify({ received: true }), {
           status: 200,
-          headers: corsHeaders,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
@@ -117,8 +169,26 @@ serve(async (req) => {
       });
 
       if (studentError) {
-        console.error("Error inserting student:", studentError);
-        throw studentError;
+        const errorMessage = studentError.message || String(studentError);
+        console.error("Error inserting student:", {
+          error: studentError,
+          classId: classData.id,
+          customerId,
+          subscriptionId,
+        });
+        // Don't throw - return 200 to prevent Stripe from retrying
+        // We can handle this error separately
+        return new Response(
+          JSON.stringify({ 
+            received: true,
+            warning: "Student enrollment failed",
+            error: errorMessage
+          }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
       }
 
       console.log("Student enrolled successfully");
@@ -169,15 +239,28 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({ received: true }), {
       status: 200,
-      headers: corsHeaders,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (error) {
-    console.error("Webhook error:", error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    console.error("Webhook error:", errorMessage);
+    if (errorStack) {
+      console.error("Error stack:", errorStack);
+    }
+    
+    const errorResponse: Record<string, unknown> = { 
+      error: errorMessage
+    };
+    if (errorStack) {
+      errorResponse.stack = errorStack;
+    }
+    
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify(errorResponse),
       {
         status: 500,
-        headers: corsHeaders,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
   }
