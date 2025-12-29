@@ -22,3 +22,4 @@ $$;
 -- Grant execute permission to authenticated users
 GRANT EXECUTE ON FUNCTION public.get_student_counts_for_classes(UUID[]) TO authenticated;
 
+
