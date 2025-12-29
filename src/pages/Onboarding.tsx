@@ -9,13 +9,32 @@ import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
 import { Loader2, Settings } from "lucide-react";
 
+// Reserved subdomains that cannot be used
+const RESERVED_SUBDOMAINS = [
+  'www', 'api', 'admin', 'app', 'mail', 'email', 'ftp', 'blog', 'shop', 
+  'store', 'support', 'help', 'docs', 'cdn', 'assets', 'static', 'media',
+  'dashboard', 'panel', 'console', 'login', 'auth', 'account', 'profile'
+];
+
 const onboardingSchema = z.object({
   institutionName: z.string().trim().min(2, "Institution name must be at least 2 characters").max(100),
   fullName: z.string().trim().min(2, "Full name is required").max(100),
+  subdomain: z.string()
+    .trim()
+    .optional()
+    .refine((val) => !val || (val.length >= 3 && val.length <= 30), {
+      message: "Subdomain must be between 3 and 30 characters"
+    })
+    .refine((val) => !val || /^[a-z0-9]+$/.test(val), {
+      message: "Subdomain can only contain lowercase letters and numbers"
+    })
+    .refine((val) => !val || !RESERVED_SUBDOMAINS.includes(val), {
+      message: "This subdomain is reserved and cannot be used"
+    }),
 });
 
 const Onboarding = () => {
-  const [formData, setFormData] = useState({ institutionName: "", fullName: "" });
+  const [formData, setFormData] = useState({ institutionName: "", fullName: "", subdomain: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -70,10 +89,38 @@ const Onboarding = () => {
         return;
       }
 
+      // Check subdomain availability if provided
+      if (formData.subdomain) {
+        const { data: existingInstitution, error: checkError } = await supabase
+          .from("institutions")
+          .select("id")
+          .eq("subdomain", formData.subdomain)
+          .maybeSingle();
+
+        if (checkError) {
+          console.error("Subdomain check error:", checkError);
+          throw new Error("Failed to check subdomain availability");
+        }
+
+        if (existingInstitution) {
+          setErrors({ subdomain: "This subdomain is already taken. Please choose another one." });
+          return;
+        }
+      }
+
       // 1) Create institution
+      const institutionData: any = { 
+        name: formData.institutionName, 
+        contact_email: session.user.email 
+      };
+      
+      if (formData.subdomain) {
+        institutionData.subdomain = formData.subdomain;
+      }
+
       const { data: institution, error: instErr } = await supabase
         .from("institutions")
-        .insert({ name: formData.institutionName, contact_email: session.user.email })
+        .insert(institutionData)
         .select()
         .single();
       if (instErr) throw instErr;
@@ -101,7 +148,11 @@ const Onboarding = () => {
         .insert({ user_id: session.user.id, role: "institution_admin", institution_id: institution.id });
       if (roleErr) throw roleErr;
 
-      toast({ title: "Setup complete", description: "Your institution has been created." });
+      const successMessage = formData.subdomain 
+        ? `Your institution has been created at ${formData.subdomain}.yourapp.com`
+        : "Your institution has been created.";
+      
+      toast({ title: "Setup complete", description: successMessage });
       navigate("/dashboard");
     } catch (error: any) {
       console.error("Onboarding error:", error);
@@ -158,6 +209,30 @@ const Onboarding = () => {
               />
               {errors.fullName && (
                 <p className="text-sm text-destructive">{errors.fullName}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="subdomain">Custom Subdomain (Optional)</Label>
+              <div className="space-y-1">
+                <Input
+                  id="subdomain"
+                  placeholder="e.g., madinahacademy"
+                  value={formData.subdomain}
+                  onChange={(e) => setFormData({ ...formData, subdomain: e.target.value.toLowerCase() })}
+                  disabled={submitting}
+                />
+                {formData.subdomain && (
+                  <p className="text-xs text-muted-foreground">
+                    Your institution will be available at: <span className="font-medium">{formData.subdomain}.yourapp.com</span>
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Leave empty to set up later. Only lowercase letters and numbers allowed.
+                </p>
+              </div>
+              {errors.subdomain && (
+                <p className="text-sm text-destructive">{errors.subdomain}</p>
               )}
             </div>
 
