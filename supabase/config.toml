@@ -1,1 +1,10 @@
+# Supabase project configuration
 project_id = "nqdznclpnizsyjxbxgxo"
+
+# Edge Functions configuration
+# IMPORTANT: stripe-webhook must have verify_jwt = false because it receives requests from Stripe
+# (not from authenticated users). Without this, webhook requests will fail with authentication errors.
+[functions.stripe-webhook]
+verify_jwt = false
+
+# create-class and create-class-simple use default JWT verification (verify_jwt = true)
